@@ -18,6 +18,7 @@ limitations under the License.
 #include <algorithm>
 #include <vector>
 
+#include "xla/tsl/profiler/utils/xplane_utils.h"
 #include "tensorflow/core/framework/typed_allocator.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/platform/mem.h"
@@ -235,19 +236,19 @@ TEST(CPUAllocatorTest, ProfilerReporting) {
 
   // Get profiling results
   tensorflow::profiler::XSpace xspace;
-  EXPECT_EQ(OkStatus(), profiler->CollectData(&xspace));
+  EXPECT_EQ(absl::OkStatus(), profiler->CollectData(&xspace));
 
   // Validate the output
-  ASSERT_EQ(xspace.planes_size(), 1) << "XSpace: " << xspace.DebugString();
-  const auto& plane = xspace.planes(0);
-  ::tensorflow::profiler::XPlaneVisitor xplane(&plane);
+  const auto plane = ::tsl::profiler::FindPlaneWithName(
+      xspace, ::tensorflow::profiler::kHostThreadsPlaneName);
+  ::tensorflow::profiler::XPlaneVisitor xplane(plane);
 
-  ASSERT_EQ(plane.name(), ::tensorflow::profiler::kHostThreadsPlaneName)
+  ASSERT_EQ(plane->name(), ::tensorflow::profiler::kHostThreadsPlaneName)
       << "XSpace: " << xspace.DebugString();
-  ASSERT_EQ(plane.event_metadata_size(), 2)
+  ASSERT_EQ(plane->event_metadata_size(), 2)
       << "XSpace: " << xspace.DebugString();
 
-  const auto& line = plane.lines(0);
+  const auto& line = plane->lines(0);
   ASSERT_EQ(line.events_size(), 2) << "XSpace: " << xspace.DebugString();
   const auto& events = line.events();
 

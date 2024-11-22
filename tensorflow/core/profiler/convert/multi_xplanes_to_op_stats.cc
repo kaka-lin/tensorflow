@@ -24,12 +24,12 @@ limitations under the License.
 #include "tensorflow/core/profiler/protobuf/op_stats.pb.h"
 #include "tensorflow/core/profiler/protobuf/xplane.pb.h"
 #include "tensorflow/core/profiler/utils/hardware_type_utils.h"
-#include "tensorflow/tsl/profiler/protobuf/xplane.pb.h"
+#include "tsl/profiler/protobuf/xplane.pb.h"
 
 namespace tensorflow {
 namespace profiler {
 
-Status ConvertMultiXSpacesToCombinedOpStats(
+absl::Status ConvertMultiXSpacesToCombinedOpStats(
     const SessionSnapshot& session_snapshot, const OpStatsOptions& options,
     OpStats* combined_op_stats) {
   // Read multiple XSpaces and convert to multiple OpStats.
@@ -59,7 +59,7 @@ Status ConvertMultiXSpacesToCombinedOpStats(
       ComputeStepIntersectionToMergeOpStats(all_op_stats_info, kuint32max);
   CombineAllOpStats(all_op_stats_info, step_intersection, combined_op_stats);
 
-  return OkStatus();
+  return absl::OkStatus();
 }
 
 }  // namespace profiler

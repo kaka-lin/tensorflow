@@ -98,16 +98,17 @@ class RandomDatasetParams : public DatasetParams {
     return {seed_, seed2_, seed_generator_resource_};
   }
 
-  virtual Status GetInputNames(
+  virtual absl::Status GetInputNames(
       std::vector<string>* input_names) const override {
     *input_names = {RandomDatasetOp::kSeed, RandomDatasetOp::kSeed2};
     if (op_version_ == 2) {
       input_names->emplace_back("seed_generator");
     }
-    return OkStatus();
+    return absl::OkStatus();
   }
 
-  virtual Status GetAttributes(AttributeVector* attributes) const override {
+  virtual absl::Status GetAttributes(
+      AttributeVector* attributes) const override {
     *attributes = {{"output_types", output_dtypes_},
                    {"output_shapes", output_shapes_},
                    {"metadata", ""}};
@@ -115,7 +116,7 @@ class RandomDatasetParams : public DatasetParams {
       attributes->emplace_back("rerandomize_each_iteration",
                                rerandomize_each_iteration_);
     }
-    return OkStatus();
+    return absl::OkStatus();
   }
 
   virtual string dataset_type() const override {

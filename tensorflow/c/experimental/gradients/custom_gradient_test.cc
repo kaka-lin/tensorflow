@@ -53,7 +53,7 @@ class PassThroughGradientFunction : public GradientFunction {
     if (grad_inputs[0]) {
       grad_inputs[0]->Ref();
     }
-    return OkStatus();
+    return absl::OkStatus();
   }
 };
 
@@ -81,7 +81,7 @@ Status ExpWithPassThroughGrad(AbstractContext* ctx,
                                           /*output_gradients=*/{},
                                           /*result=*/outputs));
   exp_output->Unref();
-  return OkStatus();
+  return absl::OkStatus();
 }
 
 TEST_P(CustomGradientTest, ExpWithPassThroughGrad) {
@@ -125,19 +125,12 @@ TEST_P(CustomGradientTest, ExpWithPassThroughGrad) {
   result_tensor = nullptr;
 }
 
-#ifdef PLATFORM_GOOGLE
-INSTANTIATE_TEST_SUITE_P(
-    CustomGradientTest, CustomGradientTest,
-    ::testing::Combine(::testing::Values("graphdef", "mlir"),
-                       /*tfrt*/ ::testing::Values(true, false),
-                       /*executing_eagerly*/ ::testing::Values(true, false)));
-#else
 INSTANTIATE_TEST_SUITE_P(
     CustomGradientTest, CustomGradientTest,
     ::testing::Combine(::testing::Values("graphdef", "mlir"),
                        /*tfrt*/ ::testing::Values(false),
                        /*executing_eagerly*/ ::testing::Values(true, false)));
-#endif
+
 }  // namespace
 }  // namespace internal
 }  // namespace gradients

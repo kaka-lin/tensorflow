@@ -44,14 +44,14 @@ namespace {
 // unreasonable number of threads.
 constexpr int kThreadLimit = 65536;
 
-Status ValidateNumThreads(int32_t num_threads) {
+absl::Status ValidateNumThreads(int32_t num_threads) {
   if (num_threads < 0) {
     return errors::InvalidArgument("`num_threads` must be >= 0");
   }
   if (num_threads >= kThreadLimit) {
     return errors::InvalidArgument("`num_threads` must be < ", kThreadLimit);
   }
-  return OkStatus();
+  return absl::OkStatus();
 }
 }  // namespace
 
@@ -136,7 +136,7 @@ class ThreadPoolHandleOp : public OpKernel {
                                         num_threads_,
                                         /*low_latency_hint=*/false,
                                         max_intra_op_parallelism_);
-                                    return OkStatus();
+                                    return absl::OkStatus();
                                   }));
       initialized_ = true;
     }
@@ -162,8 +162,9 @@ class ThreadPoolDatasetOp : public UnaryDatasetOpKernel {
   void MakeDataset(OpKernelContext* ctx, DatasetBase* input,
                    DatasetBase** output) override {
     core::RefCountPtr<ThreadPoolResource> threadpool_resource;
-    OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, 1),
-                                       &threadpool_resource));
+    ResourceHandle handle;
+    OP_REQUIRES_OK(ctx, HandleFromInput(ctx, 1, &handle));
+    OP_REQUIRES_OK(ctx, LookupResource(ctx, handle, &threadpool_resource));
     *output = new Dataset(ctx, input, ctx->input(1), threadpool_resource.get());
   }
 
@@ -206,27 +207,27 @@ class ThreadPoolDatasetOp : public UnaryDatasetOpKernel {
       return input_->Cardinality(options);
     }
 
-    Status InputDatasets(
+    absl::Status InputDatasets(
         std::vector<const DatasetBase*>* inputs) const override {
       inputs->push_back(input_);
-      return OkStatus();
+      return absl::OkStatus();
     }
 
-    Status CheckExternalState() const override {
+    absl::Status CheckExternalState() const override {
       return input_->CheckExternalState();
     }
 
    protected:
-    Status AsGraphDefInternal(SerializationContext* ctx,
-                              DatasetGraphDefBuilder* b,
-                              Node** output) const override {
+    absl::Status AsGraphDefInternal(SerializationContext* ctx,
+                                    DatasetGraphDefBuilder* b,
+                                    Node** output) const override {
       Node* input_graph_node = nullptr;
       TF_RETURN_IF_ERROR(b->AddInputDataset(ctx, input_, &input_graph_node));
       Node* resource_handle_node = nullptr;
       TF_RETURN_IF_ERROR(b->AddTensor(resource_handle_, &resource_handle_node));
       TF_RETURN_IF_ERROR(b->AddDataset(
           this, {input_graph_node, resource_handle_node}, output));
-      return OkStatus();
+      return absl::OkStatus();
     }
 
    private:
@@ -235,14 +236,14 @@ class ThreadPoolDatasetOp : public UnaryDatasetOpKernel {
       explicit Iterator(const Params& params)
           : DatasetIterator<Dataset>(params) {}
 
-      Status Initialize(IteratorContext* ctx) override {
+      absl::Status Initialize(IteratorContext* ctx) override {
         return dataset()->input_->MakeIterator(
             IteratorContext(CreateParams(ctx)), this, prefix(), &input_impl_);
       }
 
-      Status GetNextInternal(IteratorContext* ctx,
-                             std::vector<Tensor>* out_tensors,
-                             bool* end_of_sequence) override {
+      absl::Status GetNextInternal(IteratorContext* ctx,
+                                   std::vector<Tensor>* out_tensors,
+                                   bool* end_of_sequence) override {
         return input_impl_->GetNext(IteratorContext(CreateParams(ctx)),
                                     out_tensors, end_of_sequence);
       }
@@ -254,17 +255,17 @@ class ThreadPoolDatasetOp : public UnaryDatasetOpKernel {
                                          /*ratio=*/1);
       }
 
-      Status SaveInternal(SerializationContext* ctx,
-                          IteratorStateWriter* writer) override {
+      absl::Status SaveInternal(SerializationContext* ctx,
+                                IteratorStateWriter* writer) override {
         DCHECK(input_impl_ != nullptr);
         TF_RETURN_IF_ERROR(SaveInput(ctx, writer, input_impl_));
-        return OkStatus();
+        return absl::OkStatus();
       }
 
-      Status RestoreInternal(IteratorContext* ctx,
-                             IteratorStateReader* reader) override {
+      absl::Status RestoreInternal(IteratorContext* ctx,
+                                   IteratorStateReader* reader) override {
         TF_RETURN_IF_ERROR(RestoreInput(ctx, reader, input_impl_));
-        return OkStatus();
+        return absl::OkStatus();
       }
 
      private:
@@ -328,20 +329,21 @@ class MaxIntraOpParallelismDatasetOp::Dataset : public DatasetBase {
     return input_->Cardinality(options);
   }
 
-  Status InputDatasets(std::vector<const DatasetBase*>* inputs) const override {
+  absl::Status InputDatasets(
+      std::vector<const DatasetBase*>* inputs) const override {
     inputs->clear();
     inputs->push_back(input_);
-    return OkStatus();
+    return absl::OkStatus();
   }
 
-  Status CheckExternalState() const override {
+  absl::Status CheckExternalState() const override {
     return input_->CheckExternalState();
   }
 
  protected:
-  Status AsGraphDefInternal(SerializationContext* ctx,
-                            DatasetGraphDefBuilder* b,
-                            Node** output) const override {
+  absl::Status AsGraphDefInternal(SerializationContext* ctx,
+                                  DatasetGraphDefBuilder* b,
+                                  Node** output) const override {
     Node* input_graph_node = nullptr;
     TF_RETURN_IF_ERROR(b->AddInputDataset(ctx, input_, &input_graph_node));
     Node* max_intra_op_parallelism_node = nullptr;
@@ -349,7 +351,7 @@ class MaxIntraOpParallelismDatasetOp::Dataset : public DatasetBase {
                                     &max_intra_op_parallelism_node));
     TF_RETURN_IF_ERROR(b->AddDataset(
         this, {input_graph_node, max_intra_op_parallelism_node}, output));
-    return OkStatus();
+    return absl::OkStatus();
   }
 
  private:
@@ -358,13 +360,13 @@ class MaxIntraOpParallelismDatasetOp::Dataset : public DatasetBase {
     explicit Iterator(const Params& params)
         : DatasetIterator<Dataset>(params) {}
 
-    Status Initialize(IteratorContext* ctx) override {
+    absl::Status Initialize(IteratorContext* ctx) override {
       return dataset()->input_->MakeIterator(ctx, this, prefix(), &input_impl_);
     }
 
-    Status GetNextInternal(IteratorContext* ctx,
-                           std::vector<Tensor>* out_tensors,
-                           bool* end_of_sequence) override {
+    absl::Status GetNextInternal(IteratorContext* ctx,
+                                 std::vector<Tensor>* out_tensors,
+                                 bool* end_of_sequence) override {
       IteratorContext::Params params(ctx);
       auto max_parallelism = dataset()->max_intra_op_parallelism_;
       params.runner = RunnerWithMaxParallelism(*ctx->runner(), max_parallelism);
@@ -378,17 +380,17 @@ class MaxIntraOpParallelismDatasetOp::Dataset : public DatasetBase {
       return model::MakeKnownRatioNode(std::move(args), /*ratio=*/1);
     }
 
-    Status SaveInternal(SerializationContext* ctx,
-                        IteratorStateWriter* writer) override {
+    absl::Status SaveInternal(SerializationContext* ctx,
+                              IteratorStateWriter* writer) override {
       DCHECK(input_impl_ != nullptr);
       TF_RETURN_IF_ERROR(SaveInput(ctx, writer, input_impl_));
-      return OkStatus();
+      return absl::OkStatus();
     }
 
-    Status RestoreInternal(IteratorContext* ctx,
-                           IteratorStateReader* reader) override {
+    absl::Status RestoreInternal(IteratorContext* ctx,
+                                 IteratorStateReader* reader) override {
       TF_RETURN_IF_ERROR(RestoreInput(ctx, reader, input_impl_));
-      return OkStatus();
+      return absl::OkStatus();
     }
 
     TraceMeMetadata GetTraceMeMetadata() const override {
@@ -471,27 +473,28 @@ class PrivateThreadPoolDatasetOp::Dataset : public DatasetBase {
     return input_->Cardinality(options);
   }
 
-  Status InputDatasets(std::vector<const DatasetBase*>* inputs) const override {
+  absl::Status InputDatasets(
+      std::vector<const DatasetBase*>* inputs) const override {
     inputs->clear();
     inputs->push_back(input_);
-    return OkStatus();
+    return absl::OkStatus();
   }
 
-  Status CheckExternalState() const override {
+  absl::Status CheckExternalState() const override {
     return input_->CheckExternalState();
   }
 
  protected:
-  Status AsGraphDefInternal(SerializationContext* ctx,
-                            DatasetGraphDefBuilder* b,
-                            Node** output) const override {
+  absl::Status AsGraphDefInternal(SerializationContext* ctx,
+                                  DatasetGraphDefBuilder* b,
+                                  Node** output) const override {
     Node* input_graph_node = nullptr;
     TF_RETURN_IF_ERROR(b->AddInputDataset(ctx, input_, &input_graph_node));
     Node* num_threads_node = nullptr;
     TF_RETURN_IF_ERROR(b->AddScalar(num_threads_, &num_threads_node));
     TF_RETURN_IF_ERROR(
         b->AddDataset(this, {input_graph_node, num_threads_node}, output));
-    return OkStatus();
+    return absl::OkStatus();
   }
 
  private:
@@ -500,13 +503,13 @@ class PrivateThreadPoolDatasetOp::Dataset : public DatasetBase {
     explicit Iterator(const Params& params)
         : DatasetIterator<Dataset>(params) {}
 
-    Status Initialize(IteratorContext* ctx) override {
+    absl::Status Initialize(IteratorContext* ctx) override {
       return dataset()->input_->MakeIterator(ctx, this, prefix(), &input_impl_);
     }
 
-    Status GetNextInternal(IteratorContext* ctx,
-                           std::vector<Tensor>* out_tensors,
-                           bool* end_of_sequence) override {
+    absl::Status GetNextInternal(IteratorContext* ctx,
+                                 std::vector<Tensor>* out_tensors,
+                                 bool* end_of_sequence) override {
       thread::ThreadPool* pool = dataset()->thread_pool_.get();
       IteratorContext::Params params(ctx);
       params.runner = [pool](std::function<void()> c) {
@@ -523,17 +526,17 @@ class PrivateThreadPoolDatasetOp::Dataset : public DatasetBase {
       return model::MakeKnownRatioNode(std::move(args), /*ratio=*/1);
     }
 
-    Status SaveInternal(SerializationContext* ctx,
-                        IteratorStateWriter* writer) override {
+    absl::Status SaveInternal(SerializationContext* ctx,
+                              IteratorStateWriter* writer) override {
       DCHECK(input_impl_ != nullptr);
       TF_RETURN_IF_ERROR(SaveInput(ctx, writer, input_impl_));
-      return OkStatus();
+      return absl::OkStatus();
     }
 
-    Status RestoreInternal(IteratorContext* ctx,
-                           IteratorStateReader* reader) override {
+    absl::Status RestoreInternal(IteratorContext* ctx,
+                                 IteratorStateReader* reader) override {
       TF_RETURN_IF_ERROR(RestoreInput(ctx, reader, input_impl_));
-      return OkStatus();
+      return absl::OkStatus();
     }
 
     TraceMeMetadata GetTraceMeMetadata() const override {

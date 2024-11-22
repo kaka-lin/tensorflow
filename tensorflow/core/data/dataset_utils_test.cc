@@ -16,13 +16,17 @@ limitations under the License.
 #include "tensorflow/core/data/dataset_utils.h"
 
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "absl/container/flat_hash_set.h"
+#include "xla/tsl/util/determinism_test_util.h"
 #include "tensorflow/core/data/compression_utils.h"
 #include "tensorflow/core/data/dataset_test_base.h"
 #include "tensorflow/core/data/serialization_utils.h"
+#include "tensorflow/core/data/test_utils.h"
+#include "tensorflow/core/framework/dataset.h"
 #include "tensorflow/core/framework/dataset.pb.h"
 #include "tensorflow/core/framework/function.h"
 #include "tensorflow/core/framework/function.pb.h"
@@ -35,8 +39,7 @@ limitations under the License.
 #include "tensorflow/core/platform/test.h"
 #include "tensorflow/core/protobuf/error_codes.pb.h"
 #include "tensorflow/core/util/work_sharder.h"
-#include "tensorflow/tsl/platform/status_matchers.h"
-#include "tensorflow/tsl/util/determinism_test_util.h"
+#include "tsl/platform/status_matchers.h"
 
 namespace tensorflow {
 namespace data {
@@ -122,7 +125,7 @@ TEST(DatasetUtilsTest, AddToFunctionLibraryWithConflictingSignatures) {
       /*ret_def=*/{{"ret", "arg"}, {"ret2", "arg"}});
 
   FunctionLibraryDefinition flib_0(OpRegistry::Global(), fdef_base);
-  Status s = AddToFunctionLibrary(&flib_0, fdef_to_add);
+  absl::Status s = AddToFunctionLibrary(&flib_0, fdef_to_add);
   EXPECT_EQ(error::Code::INVALID_ARGUMENT, s.code());
   EXPECT_EQ(
       "Cannot add function '0' because a different function with the same "
@@ -192,6 +195,36 @@ TEST(DatasetUtilsTest, BoolConstructor) {
   EXPECT_TRUE(DeterminismPolicy(false).IsNondeterministic());
   EXPECT_FALSE(DeterminismPolicy(false).IsDeterministic());
   EXPECT_FALSE(DeterminismPolicy(false).IsDefault());
+}
+
+class TestSplitProvider : public SplitProvider {
+ public:
+  absl::Status GetNext(Tensor* split, bool* end_of_splits) override {
+    return absl::OkStatus();
+  }
+
+  absl::Status Reset() override { return absl::OkStatus(); }
+
+  absl::Status Save(std::function<std::string(std::string)> key_name_fn,
+                    IteratorStateWriter* writer) override {
+    return absl::OkStatus();
+  }
+
+  absl::Status Restore(std::function<std::string(std::string)> key_name_fn,
+                       IteratorStateReader* reader) override {
+    return absl::OkStatus();
+  }
+};
+
+TEST(DatasetUtilsTest, MakeNestedIteratorContext) {
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<TestContext> test_ctx,
+                          TestContext::Create());
+  IteratorContext::Params params(test_ctx->op_ctx());
+  params.split_providers.push_back(std::make_unique<TestSplitProvider>());
+  IteratorContext iter_ctx(params);
+  IteratorContext nested_ctx = MakeNestedIteratorContext(&iter_ctx);
+  EXPECT_FALSE(iter_ctx.split_providers().empty());
+  EXPECT_TRUE(nested_ctx.split_providers().empty());
 }
 
 REGISTER_DATASET_EXPERIMENT("test_only_experiment_0",
@@ -326,11 +359,10 @@ TEST_P(GetExperimentsOptTest, DatasetUtils) {
   auto opt_ins = test_case.opt_ins;
   auto opt_outs = test_case.opt_outs;
   if (!opt_ins.empty()) {
-    setenv("TF_DATA_EXPERIMENT_OPT_IN", str_util::Join(opt_ins, ",").c_str(),
-           1);
+    setenv("TF_DATA_EXPERIMENT_OPT_IN", absl::StrJoin(opt_ins, ",").c_str(), 1);
   }
   if (!opt_outs.empty()) {
-    setenv("TF_DATA_EXPERIMENT_OPT_OUT", str_util::Join(opt_outs, ",").c_str(),
+    setenv("TF_DATA_EXPERIMENT_OPT_OUT", absl::StrJoin(opt_outs, ",").c_str(),
            1);
   }
   const std::string job_name = "job";
@@ -343,14 +375,14 @@ TEST_P(GetExperimentsOptTest, DatasetUtils) {
   for (const auto& experiment : test_case.expected_in) {
     EXPECT_TRUE(experiment_set.find(experiment) != experiment_set.end())
         << "experiment=" << experiment << " opt_ins={"
-        << str_util::Join(opt_ins, ",") << "} opt_outs={"
-        << str_util::Join(opt_outs, ",") << "}";
+        << absl::StrJoin(opt_ins, ",") << "} opt_outs={"
+        << absl::StrJoin(opt_outs, ",") << "}";
   }
   for (const auto& experiment : test_case.expected_out) {
     EXPECT_TRUE(experiment_set.find(experiment) == experiment_set.end())
         << "experiment=" << experiment << " opt_ins={"
-        << str_util::Join(opt_ins, ",") << "} opt_outs={"
-        << str_util::Join(opt_outs, ",") << "}";
+        << absl::StrJoin(opt_ins, ",") << "} opt_outs={"
+        << absl::StrJoin(opt_outs, ",") << "}";
   }
 
   if (!opt_ins.empty()) {
@@ -639,17 +671,17 @@ GetOptimizationsTestCase GetOptimizationTestCase4() {
   options.mutable_optimization_options()->set_parallel_batch(true);
   options.mutable_optimization_options()->set_shuffle_and_repeat_fusion(true);
   options.mutable_optimization_options()->set_inject_prefetch(true);
-  options.mutable_optimization_options()->set_warm_start(true);
+  options.mutable_optimization_options()->set_seq_interleave_prefetch(true);
   options.set_slack(true);
-  return {
-      options,
-      /*expected_enabled=*/
-      {"filter_fusion", "filter_parallelization", "make_sloppy",
-       "map_and_batch_fusion", "map_and_filter_fusion", "map_fusion",
-       "map_parallelization", "noop_elimination", "parallel_batch",
-       "shuffle_and_repeat_fusion", "slack", "inject_prefetch", "warm_start"},
-      /*expected_disabled=*/{},
-      /*expected_default=*/{}};
+  return {options,
+          /*expected_enabled=*/
+          {"filter_fusion", "filter_parallelization", "make_sloppy",
+           "map_and_batch_fusion", "map_and_filter_fusion", "map_fusion",
+           "map_parallelization", "noop_elimination", "parallel_batch",
+           "shuffle_and_repeat_fusion", "slack", "inject_prefetch",
+           "seq_interleave_prefetch"},
+          /*expected_disabled=*/{},
+          /*expected_default=*/{}};
 }
 
 class GetOptimizationsTest

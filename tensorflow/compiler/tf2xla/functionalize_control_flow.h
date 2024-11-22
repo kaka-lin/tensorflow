@@ -17,7 +17,7 @@ limitations under the License.
 #define TENSORFLOW_COMPILER_TF2XLA_FUNCTIONALIZE_CONTROL_FLOW_H_
 
 #include "tensorflow/compiler/tf2xla/functionalize_control_flow_util.h"
-#include "tensorflow/compiler/xla/status_macros.h"
+#include "xla/status_macros.h"
 #include "tensorflow/core/common_runtime/optimization_registry.h"
 #include "tensorflow/core/framework/function.h"
 #include "tensorflow/core/graph/graph.h"
@@ -48,22 +48,21 @@ namespace tensorflow {
 //
 // The user of this function is responsible for using a node filter that
 // satisfies the above conditions.
-Status FunctionalizeControlFlow(Graph* graph,
-                                FunctionLibraryDefinition* library,
-                                const NodeFilter& node_filter = {},
-                                bool include_functions = false);
+absl::Status FunctionalizeControlFlow(Graph* graph,
+                                      FunctionLibraryDefinition* library,
+                                      const NodeFilter& node_filter = {},
+                                      bool include_functions = false);
 
-Status FunctionalizeControlFlowForGraphDef(GraphDef* graph_def,
-                                           FunctionLibraryDefinition* library,
-                                           const NodeFilter& node_filter = {},
-                                           bool include_functions = false);
+absl::Status FunctionalizeControlFlowForGraphDef(
+    GraphDef* graph_def, FunctionLibraryDefinition* library,
+    const NodeFilter& node_filter = {}, bool include_functions = false);
 
 // Rewrites the graph by turning V1 control flow structure
 // (Switch/Merge/etc.) into V2 control flow structure (If/While), only modifies
 // functions that will be executed by XLA.
 class FunctionalizeControlFlowForXlaPass : public GraphOptimizationPass {
  public:
-  Status Run(const GraphOptimizationPassOptions& options) override;
+  absl::Status Run(const GraphOptimizationPassOptions& options) override;
 };
 
 }  // namespace tensorflow

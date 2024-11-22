@@ -14,10 +14,16 @@ limitations under the License.
 ==============================================================================*/
 #include "tensorflow/core/util/example_proto_fast_parsing.h"
 
+#include <algorithm>
+#include <functional>
+#include <optional>
+#include <utility>
 #include <vector>
 
 #include "absl/base/casts.h"
 #include "absl/container/flat_hash_map.h"
+#include "absl/status/status.h"
+#include "absl/strings/substitute.h"
 #include "tensorflow/core/example/example.pb.h"
 #include "tensorflow/core/example/feature.pb.h"
 #include "tensorflow/core/framework/allocator.h"
@@ -118,14 +124,14 @@ namespace parsed {
 // ParseDataType has to be called first, then appropriate ParseZzzzList.
 class Feature {
  public:
-  Feature() {}
+  Feature() = default;
   explicit Feature(StringPiece serialized) : serialized_(serialized) {}
 
-  Status ParseDataType(DataType* dtype) {
+  absl::Status ParseDataType(DataType* dtype) {
     DCHECK(dtype != nullptr);
     if (serialized_.empty()) {
       *dtype = DT_INVALID;
-      return OkStatus();
+      return absl::OkStatus();
     }
     uint8 oneof_tag = static_cast<uint8>(*serialized_.data());
     serialized_.remove_prefix(1);
@@ -144,7 +150,7 @@ class Feature {
         *dtype = DT_INVALID;
         return errors::InvalidArgument("Unsupported datatype.");
     }
-    return OkStatus();
+    return absl::OkStatus();
   }
 
   bool GetNumElementsInBytesList(int* num_elements) {
@@ -583,7 +589,7 @@ void LogSparseFeatureDataLoss(StringPiece feature_name) {
   duplicated_sparse_feature->GetCell()->IncrementBy(1);
 }
 
-Status FastParseSerializedExample(
+absl::Status FastParseSerializedExample(
     const tstring& serialized_example, const tstring& example_name,
     const size_t example_index, const Config& config,
     const PresizedCuckooMap<std::pair<size_t, Type>>& config_index,
@@ -941,15 +947,15 @@ Status FastParseSerializedExample(
     out.example_end_indices.push_back(prev_example_end_index);
   }
 
-  return OkStatus();
+  return absl::OkStatus();
 }
 
-Status CheckConfigDataType(DataType dtype) {
+absl::Status CheckConfigDataType(DataType dtype) {
   switch (dtype) {
     case DT_INT64:
     case DT_FLOAT:
     case DT_STRING:
-      return OkStatus();
+      return absl::OkStatus();
     default:
       return errors::InvalidArgument("Invalid config dtype: ",
                                      DataTypeString(dtype));
@@ -964,7 +970,7 @@ inline void ReportUnexpectedDataType(DataType dtype) {
       << "in variable that should have been checked by CheckConfigDataType().";
 }
 
-Status CheckConfigDataTypes(const Config& config) {
+absl::Status CheckConfigDataTypes(const Config& config) {
   // Check config so we can safely CHECK(false) in switches on config.*.dtype
   for (auto& c : config.sparse) {
     TF_RETURN_IF_ERROR(CheckConfigDataType(c.dtype));
@@ -979,7 +985,7 @@ Status CheckConfigDataTypes(const Config& config) {
                                      DataTypeString(c.splits_dtype));
     }
   }
-  return OkStatus();
+  return absl::OkStatus();
 }
 
 template <typename T>
@@ -1081,7 +1087,7 @@ class TensorVector {
  private:
   // Use absl::optional to avoid calling the default constructor of Tensor
   // unnecessarily.
-  absl::optional<Tensor> tensor_;
+  std::optional<Tensor> tensor_;
 
   // Cached pointer to the raw data inside the tensor.
   T* data_ = nullptr;
@@ -1127,10 +1133,10 @@ void CopySparseBufferToTensor(DataType dtype, size_t offset, SparseBuffer* src,
 
 }  // namespace
 
-Status FastParseExample(const Config& config,
-                        gtl::ArraySlice<tstring> serialized,
-                        gtl::ArraySlice<tstring> example_names,
-                        thread::ThreadPool* thread_pool, Result* result) {
+absl::Status FastParseExample(const Config& config,
+                              absl::Span<const tstring> serialized,
+                              absl::Span<const tstring> example_names,
+                              thread::ThreadPool* thread_pool, Result* result) {
   DCHECK(result != nullptr);
   // Check config so we can safely CHECK(false) in switches on config.*.dtype
   TF_RETURN_IF_ERROR(CheckConfigDataTypes(config));
@@ -1224,7 +1230,7 @@ Status FastParseExample(const Config& config,
   std::vector<std::vector<SparseBuffer>> sparse_buffers(num_minibatches);
   std::vector<std::vector<SparseBuffer>> varlen_dense_buffers(num_minibatches);
   std::vector<std::vector<SparseBuffer>> ragged_buffers(num_minibatches);
-  std::vector<Status> status_of_minibatch(num_minibatches);
+  std::vector<absl::Status> status_of_minibatch(num_minibatches);
   auto ProcessMiniBatch = [&](size_t minibatch) {
     sparse_buffers[minibatch].resize(config.sparse.size());
     varlen_dense_buffers[minibatch].resize(config.dense.size());
@@ -1248,7 +1254,7 @@ Status FastParseExample(const Config& config,
 
   ParallelFor(ProcessMiniBatch, num_minibatches, thread_pool);
 
-  for (Status& status : status_of_minibatch) {
+  for (absl::Status& status : status_of_minibatch) {
     TF_RETURN_IF_ERROR(status);
   }
 
@@ -1438,11 +1444,11 @@ Status FastParseExample(const Config& config,
     MergeRaggedMinibatches(d);
   }
 
-  return OkStatus();
+  return absl::OkStatus();
 }
 
-Status FastParseSingleExample(const Config& config, StringPiece serialized,
-                              Result* result) {
+absl::Status FastParseSingleExample(const Config& config,
+                                    StringPiece serialized, Result* result) {
   DCHECK(result != nullptr);
   // Check config so we can safely CHECK(false) in switches on config.*.dtype
   TF_RETURN_IF_ERROR(CheckConfigDataTypes(config));
@@ -1714,7 +1720,10 @@ Status FastParseSingleExample(const Config& config, StringPiece serialized,
       }
 
       if (num_elements % num_elements_divisor != 0) {
-        return parse_error();
+        return absl::InvalidArgumentError(absl::Substitute(
+            "Error while parsing feature with key $0: number "
+            "of elements should be divisible by $1, found $2 instead",
+            feature_name, num_elements_divisor, num_elements));
       }
 
       if (stats) {
@@ -1825,7 +1834,7 @@ Status FastParseSingleExample(const Config& config, StringPiece serialized,
     }
   }
 
-  return OkStatus();
+  return absl::OkStatus();
 }
 
 // Private helper functions for FastParseSequenceExample.
@@ -1853,7 +1862,7 @@ struct FeatureProtos {
 // Map from feature name to FeatureProtos for that feature.
 using FeatureProtosMap = absl::flat_hash_map<StringPiece, FeatureProtos>;
 
-string ExampleName(const gtl::ArraySlice<tstring> example_names, int n) {
+string ExampleName(const absl::Span<const tstring> example_names, int n) {
   return example_names.empty() ? "<unknown>" : example_names[n];
 }
 
@@ -2089,9 +2098,9 @@ inline bool SkipEmptyFeature(protobuf::io::CodedInputStream* stream,
 }
 
 // Reads an example proto, and extracts a StringPiece pointer to each feature.
-Status ExtractFeaturesFromSequenceExamples(
-    const gtl::ArraySlice<tstring> examples,
-    const gtl::ArraySlice<tstring> example_names,
+absl::Status ExtractFeaturesFromSequenceExamples(
+    const absl::Span<const tstring> examples,
+    const absl::Span<const tstring> example_names,
     FeatureProtosMap* context_features, FeatureProtosMap* sequence_features) {
   for (int d = 0; d < examples.size(); d++) {
     const tstring& example = examples[d];
@@ -2153,13 +2162,14 @@ Status ExtractFeaturesFromSequenceExamples(
       }
     }
   }
-  return OkStatus();
+  return absl::OkStatus();
 }
 
 // Populates context_features[k].length based on context_features[k].protos
 // (for all k).
-Status GetContextFeatureLengths(const gtl::ArraySlice<tstring> example_names,
-                                FeatureProtosMap* context_features) {
+absl::Status GetContextFeatureLengths(
+    const absl::Span<const tstring> example_names,
+    FeatureProtosMap* context_features) {
   for (auto& c : *context_features) {
     FeatureProtos& feature = c.second;
     for (int d = 0; d < feature.protos.size(); ++d) {
@@ -2188,13 +2198,14 @@ Status GetContextFeatureLengths(const gtl::ArraySlice<tstring> example_names,
       }
     }
   }
-  return OkStatus();
+  return absl::OkStatus();
 }
 
 // Populates sequence_features[k].length and sequence_features[k].num_rows based
 // on sequence_features[k].protos (for all k).
-Status GetSequenceFeatureLengths(const gtl::ArraySlice<tstring> example_names,
-                                 FeatureProtosMap* sequence_features) {
+absl::Status GetSequenceFeatureLengths(
+    const absl::Span<const tstring> example_names,
+    FeatureProtosMap* sequence_features) {
   for (auto& c : *sequence_features) {
     FeatureProtos& feature = c.second;
     for (int d = 0; d < feature.protos.size(); ++d) {
@@ -2255,7 +2266,7 @@ Status GetSequenceFeatureLengths(const gtl::ArraySlice<tstring> example_names,
       }
     }
   }
-  return OkStatus();
+  return absl::OkStatus();
 }
 
 // Copies src into dst[dst_offset:dst_offset+src.size], and then increments
@@ -2290,11 +2301,11 @@ void CopyTensorIntoTensor(DataType dtype, const Tensor& src, Tensor* dst,
 
 // Parses dense features in `context_features`, and writes their parsed
 // values to `context_results`.
-Status ParseContextDenseFeatures(const FeatureProtosMap& context_features,
-                                 const FastParseExampleConfig& context_config,
-                                 gtl::ArraySlice<tstring> example_names,
-                                 bool is_batch, int num_examples,
-                                 Allocator* allocator, Result* context_result) {
+absl::Status ParseContextDenseFeatures(
+    const FeatureProtosMap& context_features,
+    const FastParseExampleConfig& context_config,
+    absl::Span<const tstring> example_names, bool is_batch, int num_examples,
+    Allocator* allocator, Result* context_result) {
   for (int t = 0; t < context_config.dense.size(); ++t) {
     const auto& c = context_config.dense[t];
     const FeatureProtos& feature =
@@ -2348,17 +2359,16 @@ Status ParseContextDenseFeatures(const FeatureProtosMap& context_features,
       }
     }
   }
-  return OkStatus();
+  return absl::OkStatus();
 }
 
 // Parses sparse features in `context_features`, and writes their parsed
 // values to `context_results`.
-Status ParseContextSparseFeatures(const FeatureProtosMap& context_features,
-                                  const FastParseExampleConfig& context_config,
-                                  gtl::ArraySlice<tstring> example_names,
-                                  bool is_batch, int num_examples,
-                                  Allocator* allocator,
-                                  Result* context_result) {
+absl::Status ParseContextSparseFeatures(
+    const FeatureProtosMap& context_features,
+    const FastParseExampleConfig& context_config,
+    absl::Span<const tstring> example_names, bool is_batch, int num_examples,
+    Allocator* allocator, Result* context_result) {
   for (int t = 0; t < context_config.sparse.size(); ++t) {
     const auto& c = context_config.sparse[t];
     const FeatureProtos& feature =
@@ -2410,17 +2420,16 @@ Status ParseContextSparseFeatures(const FeatureProtosMap& context_features,
       out_shape(0) = max_num_cols;
     }
   }
-  return OkStatus();
+  return absl::OkStatus();
 }
 
 // Parses ragged features in `context_features`, and writes their parsed
 // values to `context_results`.
-Status ParseContextRaggedFeatures(const FeatureProtosMap& context_features,
-                                  const FastParseExampleConfig& context_config,
-                                  gtl::ArraySlice<tstring> example_names,
-                                  bool is_batch, int num_examples,
-                                  Allocator* allocator,
-                                  Result* context_result) {
+absl::Status ParseContextRaggedFeatures(
+    const FeatureProtosMap& context_features,
+    const FastParseExampleConfig& context_config,
+    absl::Span<const tstring> example_names, bool is_batch, int num_examples,
+    Allocator* allocator, Result* context_result) {
   for (int t = 0; t < context_config.ragged.size(); ++t) {
     const auto& c = context_config.ragged[t];
     const FeatureProtos& feature =
@@ -2488,17 +2497,17 @@ Status ParseContextRaggedFeatures(const FeatureProtosMap& context_features,
       }
     }
   }
-  return OkStatus();
+  return absl::OkStatus();
 }
 
 // Parses dense features in `sequence_features`, and writes their parsed
 // values to `sequence_result`.
-Status ParseSequenceDenseFeatures(const FeatureProtosMap& sequence_features,
-                                  const FastParseExampleConfig& sequence_config,
-                                  gtl::ArraySlice<tstring> example_names,
-                                  bool is_batch, int num_examples,
-                                  Allocator* allocator, Result* sequence_result,
-                                  std::vector<Tensor>* dense_feature_lengths) {
+absl::Status ParseSequenceDenseFeatures(
+    const FeatureProtosMap& sequence_features,
+    const FastParseExampleConfig& sequence_config,
+    absl::Span<const tstring> example_names, bool is_batch, int num_examples,
+    Allocator* allocator, Result* sequence_result,
+    std::vector<Tensor>* dense_feature_lengths) {
   TensorShape dense_length_shape;
   if (is_batch) {
     dense_length_shape.AddDim(num_examples);
@@ -2642,15 +2651,15 @@ Status ParseSequenceDenseFeatures(const FeatureProtosMap& sequence_features,
       }
     }
   }
-  return OkStatus();
+  return absl::OkStatus();
 }
 
 // Parses sparse features in `sequence_features`, and writes their parsed
 // values to `sequence_result`.
-Status ParseSequenceSparseFeatures(
+absl::Status ParseSequenceSparseFeatures(
     const FeatureProtosMap& sequence_features,
     const FastParseExampleConfig& sequence_config,
-    gtl::ArraySlice<tstring> example_names, bool is_batch, int num_examples,
+    absl::Span<const tstring> example_names, bool is_batch, int num_examples,
     Allocator* allocator, Result* sequence_result) {
   for (int t = 0; t < sequence_config.sparse.size(); ++t) {
     const auto& c = sequence_config.sparse[t];
@@ -2770,15 +2779,15 @@ Status ParseSequenceSparseFeatures(
       out_shape(1) = max_num_cols;
     }
   }
-  return OkStatus();
+  return absl::OkStatus();
 }
 
 // Parses ragged features in `sequence_features`, and writes their parsed
 // values to `sequence_result`.
-Status ParseSequenceRaggedFeatures(
+absl::Status ParseSequenceRaggedFeatures(
     const FeatureProtosMap& sequence_features,
     const FastParseExampleConfig& sequence_config,
-    gtl::ArraySlice<tstring> example_names, bool is_batch, int num_examples,
+    absl::Span<const tstring> example_names, bool is_batch, int num_examples,
     Allocator* allocator, Result* sequence_result) {
   for (int t = 0; t < sequence_config.ragged.size(); ++t) {
     const auto& c = sequence_config.ragged[t];
@@ -2915,21 +2924,20 @@ Status ParseSequenceRaggedFeatures(
       }
     }
   }
-  return OkStatus();
+  return absl::OkStatus();
 }
 
 }  // namespace
 
 // TODO(sundberg): Use the threadpool to parallelize example parsing.
 // TODO(b/111553342): Support extracting feature statistics from the examples.
-Status FastParseSequenceExample(const FastParseExampleConfig& context_config,
-                                const FastParseExampleConfig& sequence_config,
-                                gtl::ArraySlice<tstring> serialized,
-                                gtl::ArraySlice<tstring> example_names,
-                                thread::ThreadPool* thread_pool,
-                                Result* context_result, Result* sequence_result,
-                                std::vector<Tensor>* dense_feature_lengths,
-                                bool is_batch) {
+absl::Status FastParseSequenceExample(
+    const FastParseExampleConfig& context_config,
+    const FastParseExampleConfig& sequence_config,
+    absl::Span<const tstring> serialized,
+    absl::Span<const tstring> example_names, thread::ThreadPool* thread_pool,
+    Result* context_result, Result* sequence_result,
+    std::vector<Tensor>* dense_feature_lengths, bool is_batch) {
   int num_examples = serialized.size();
   DCHECK(context_result != nullptr);
   DCHECK(sequence_result != nullptr);
@@ -3077,7 +3085,7 @@ Status FastParseSequenceExample(const FastParseExampleConfig& context_config,
       sequence_features, sequence_config, example_names, is_batch, num_examples,
       allocator, sequence_result));
 
-  return OkStatus();
+  return absl::OkStatus();
 }
 
 }  // namespace example

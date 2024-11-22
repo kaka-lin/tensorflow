@@ -15,6 +15,8 @@ limitations under the License.
 #ifndef TENSORFLOW_CORE_TFRT_UTILS_ERROR_UTIL_H_
 #define TENSORFLOW_CORE_TFRT_UTILS_ERROR_UTIL_H_
 
+#include <string>
+
 #include "tensorflow/core/platform/status.h"
 #include "tfrt/support/error_util.h"  // from @tf_runtime
 #include "tfrt/support/forward_decls.h"  // from @tf_runtime
@@ -73,8 +75,6 @@ inline std::string MakeStatusString(tensorflow::Status status) {
 inline llvm::Error MakeStatusError(tensorflow::Status status) {
   return MakeStringError(MakeStatusString(status));
 }
-
-absl::Status AbslStatusFromTfStatus(tensorflow::Status status);
 
 }  // namespace tfrt
 

@@ -29,10 +29,9 @@ limitations under the License.
 #include "tensorflow/compiler/mlir/op_or_arg_name_mapper.h"
 #include "tensorflow/compiler/tf2xla/xla_context.h"
 #include "tensorflow/compiler/tf2xla/xla_expression.h"
-#include "tensorflow/compiler/xla/client/xla_builder.h"
-#include "tensorflow/compiler/xla/client/xla_computation.h"
-#include "tensorflow/compiler/xla/mlir_hlo/mhlo/IR/hlo_ops.h"
-#include "tensorflow/compiler/xla/translate/hlo_to_mhlo/mlir_hlo_builder.h"
+#include "xla/hlo/builder/xla_builder.h"
+#include "xla/hlo/builder/xla_computation.h"
+#include "xla/mlir_hlo/mhlo/IR/hlo_ops.h"
 #include "tensorflow/core/common_runtime/device_mgr.h"
 #include "tensorflow/core/framework/op_kernel.h"
 
@@ -45,25 +44,24 @@ class Tf2XlaRewriter {
  public:
   static mlir::LogicalResult RewriteOp(mlir::Operation* op,
                                        mlir::PatternRewriter& rewriter,
-                                       const std::string& device_type,
-                                       bool use_tf2xla_hlo_importer);
+                                       const std::string& device_type);
 
  private:
   friend class Tf2XlaRewriterTestPeer;
 
   Tf2XlaRewriter(mlir::Operation* op, mlir::PatternRewriter& rewriter,
-                 const std::string& device_type, bool use_tf2xla_hlo_importer);
+                 const std::string& device_type);
 
   ~Tf2XlaRewriter();
 
   // Compiles the given Operation with XlaBuilder and imports the generated HLO
   // via the HLO -> MHLO importer.
-  tsl::StatusOr<mhlo::TupleOp> CompileWithHloImporter(
+  absl::StatusOr<mhlo::TupleOp> CompileWithHloImporter(
       tensorflow::OpKernelContext& op_context);
 
   // Import the given XlaComputation into the parent module. Returns the given
   // generated function.
-  tsl::StatusOr<mhlo::TupleOp> ImportXlaComputation(
+  absl::StatusOr<mhlo::TupleOp> ImportXlaComputation(
       xla::XlaComputation& computation);
 
   // Prepares OpKernelContext params common to all the ops.
@@ -108,8 +106,7 @@ class Tf2XlaRewriter {
   std::string device_type_;
 
   mlir::PatternRewriter& rewriter_;
-  ::xla::MlirHloBuilder hlo_builder_;
-  tensorflow::OpOrArgLocNameMapper name_mapper_;
+  std::unique_ptr<tensorflow::OpOrArgLocNameMapper> name_mapper_;
 
   tensorflow::XlaContext* context_;  // Ref-counted.
 
@@ -120,7 +117,6 @@ class Tf2XlaRewriter {
   std::unique_ptr<tensorflow::ProcessFunctionLibraryRuntime> pflr_;
   tensorflow::OpKernelContext::Params params_;
 
-  bool use_tf2xla_hlo_importer_;
   xla::XlaBuilder xla_builder_;
 };
 

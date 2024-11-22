@@ -31,6 +31,7 @@ from tensorflow.python.distribute.cluster_resolver import tpu_cluster_resolver
 from tensorflow.python.eager import context
 from tensorflow.python.eager import def_function
 from tensorflow.python.eager import test
+from tensorflow.python.framework import config
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import indexed_slices
@@ -42,7 +43,6 @@ from tensorflow.python.ops import random_ops
 from tensorflow.python.ops import variable_scope
 from tensorflow.python.ops import variable_v1
 from tensorflow.python.ops import variables as variables_lib
-from tensorflow.python.tpu import tpu_strategy_util
 from tensorflow.python.util import variable_utils
 
 
@@ -655,7 +655,7 @@ class OnWriteVariableSyncScatterTests(test.TestCase, parameterized.TestCase):
 
   @combinations.generate(ms_combination + tpu_combination)
   def testScatterOpsWithNoneAggregation(self, distribution):
-
+    config.disable_mlir_bridge()
     def assert_close(v, op, delta, expect):
       scatter_op = getattr(v, op)
 
@@ -971,7 +971,7 @@ class OnReadVariableSyncTest(test.TestCase, parameterized.TestCase):
     for aggregation in aggregations:
       if strategy_test_lib.is_tpu_strategy(distribution):
         resolver = tpu_cluster_resolver.TPUClusterResolver("")
-        tpu_strategy_util.initialize_tpu_system(resolver)
+        tpu_cluster_resolver.initialize_tpu_system(resolver)
       with distribution.scope():
         v = variable_v1.VariableV1(
             0.,

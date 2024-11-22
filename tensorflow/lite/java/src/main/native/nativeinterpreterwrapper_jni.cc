@@ -31,9 +31,9 @@ limitations under the License.
 #include "tensorflow/lite/model_builder.h"
 #include "tensorflow/lite/tools/verifier_internal.h"
 #if TFLITE_DISABLE_SELECT_JAVA_APIS
-#include "tensorflow/lite/experimental/acceleration/configuration/c/delegate_plugin.h"
-#include "tensorflow/lite/experimental/acceleration/configuration/c/xnnpack_plugin.h"
-#include "tensorflow/lite/experimental/acceleration/configuration/configuration_generated.h"
+#include "tensorflow/lite/acceleration/configuration/c/delegate_plugin.h"
+#include "tensorflow/lite/acceleration/configuration/c/xnnpack_plugin.h"
+#include "tensorflow/lite/acceleration/configuration/configuration_generated.h"
 #else
 #include "tensorflow/lite/delegates/xnnpack/xnnpack_delegate.h"
 #endif
@@ -195,10 +195,6 @@ Java_org_tensorflow_lite_NativeInterpreterWrapper_hasUnresolvedFlexOp(
 JNIEXPORT jobjectArray JNICALL
 Java_org_tensorflow_lite_NativeInterpreterWrapper_getSignatureKeys(
     JNIEnv* env, jclass clazz, jlong handle) {
-#if TFLITE_DISABLE_SELECT_JAVA_APIS
-  TFLITE_LOG(tflite::TFLITE_LOG_WARNING, "Not supported: getSignatureKeys");
-  return nullptr;
-#else
   Interpreter* interpreter = convertLongToInterpreter(env, handle);
   if (interpreter == nullptr) return nullptr;
   static jclass string_class =
@@ -219,7 +215,6 @@ Java_org_tensorflow_lite_NativeInterpreterWrapper_getSignatureKeys(
                                env->NewStringUTF(signature_keys[i]->c_str()));
   }
   return keys;
-#endif  // TFLITE_DISABLE_SELECT_JAVA_APIS
 }
 
 JNIEXPORT jint JNICALL

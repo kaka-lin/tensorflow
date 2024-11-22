@@ -21,6 +21,11 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "xla/tsl/distributed_runtime/coordination/coordination_service.h"
+#include "xla/tsl/distributed_runtime/coordination/coordination_service_agent.h"
+#include "xla/tsl/protobuf/coordination_config.pb.h"
+#include "xla/tsl/protobuf/coordination_service.pb.h"
+#include "xla/tsl/protobuf/distributed_runtime_payloads.pb.h"
 #include "tensorflow/core/activity_watcher/activity.h"
 #include "tensorflow/core/common_runtime/device_mgr.h"
 #include "tensorflow/core/common_runtime/renamed_device.h"
@@ -33,11 +38,6 @@ limitations under the License.
 #include "tensorflow/core/protobuf/cluster.pb.h"
 #include "tensorflow/core/protobuf/tensorflow_server.pb.h"
 #include "tensorflow/core/util/device_name_utils.h"
-#include "tensorflow/tsl/distributed_runtime/coordination/coordination_service.h"
-#include "tensorflow/tsl/distributed_runtime/coordination/coordination_service_agent.h"
-#include "tensorflow/tsl/protobuf/coordination_config.pb.h"
-#include "tensorflow/tsl/protobuf/coordination_service.pb.h"
-#include "tensorflow/tsl/protobuf/distributed_runtime_payloads.pb.h"
 
 namespace tensorflow {
 namespace {
@@ -108,19 +108,19 @@ SessionMgr::SessionMgr(
 /* static */
 std::string SessionMgr::WorkerNameFromServerDef(const ServerDef& server_def) {
   return strings::StrCat("/job:", server_def.job_name(),
-                         "/replica:0/task:", server_def.task_index());
+                         "/replica:", server_def.replica(),
+                         "/task:", server_def.task_index());
 }
 
-Status SessionMgr::CreateSession(const std::string& session,
-                                 const ServerDef& server_def,
-                                 bool isolate_session_state,
-                                 StatusCallback coordination_error_callback) {
+absl::Status SessionMgr::CreateSession(
+    const std::string& session, const ServerDef& server_def,
+    bool isolate_session_state, StatusCallback coordination_error_callback) {
   return CreateSession(session, server_def, {}, isolate_session_state,
                        /*master_task=*/"",
                        /*master_incarnation=*/0, coordination_error_callback);
 }
 
-Status SessionMgr::CreateSession(
+absl::Status SessionMgr::CreateSession(
     const std::string& session, const ServerDef& server_def,
     const protobuf::RepeatedPtrField<DeviceAttributes>&
         cluster_device_attributes,
@@ -131,7 +131,7 @@ Status SessionMgr::CreateSession(
                        /*master_incarnation=*/0);
 }
 
-Status SessionMgr::CreateSession(
+absl::Status SessionMgr::CreateSession(
     const std::string& session, const ServerDef& server_def,
     const protobuf::RepeatedPtrField<DeviceAttributes>&
         cluster_device_attributes,
@@ -268,6 +268,7 @@ Status SessionMgr::CreateSession(
   CoordinationServiceConfig coordination_config =
       server_def.default_session_config().experimental().coordination_config();
   if (!coordination_config.service_type().empty() &&
+      !coordination_config.force_disable() &&
       coordination_service_agent_ == nullptr) {
     std::unique_ptr<CoordinationClientCache> client_cache;
     TF_RETURN_IF_ERROR(worker_cache->GetCoordinationClientCache(&client_cache));
@@ -305,14 +306,14 @@ Status SessionMgr::CreateSession(
     activity_watcher::MaybeEnableMultiWorkersWatching(
         coordination_service_agent_.get());
   }
-  return OkStatus();
+  return absl::OkStatus();
 }
 
 void SessionMgr::ResetDefaultWorkerCache(WorkerCacheInterface* worker_cache) {
   default_worker_cache_.reset(worker_cache);
 }
 
-Status SessionMgr::UpdateSession(
+absl::Status SessionMgr::UpdateSession(
     const std::string& session, const ServerDef& server_def,
     const protobuf::RepeatedPtrField<DeviceAttributes>&
         cluster_device_attributes) {
@@ -372,19 +373,32 @@ Status SessionMgr::UpdateSession(
   TF_RETURN_IF_ERROR(worker_session->UpdateWorkerCacheAndDevices(
       std::unique_ptr<WorkerCacheInterface>(worker_cache),
       std::move(added_remote_devices), removed_remote_devices));
-  return OkStatus();
+  return absl::OkStatus();
 }
 
-Status SessionMgr::DeleteSession(const std::string& session) {
+absl::Status SessionMgr::DeleteSession(const std::string& session) {
   mutex_lock l(mu_);
   auto it = sessions_.find(session);
   if (it != sessions_.end()) {
     sessions_.erase(it);
   }
-  return OkStatus();
+  return absl::OkStatus();
 }
 
-Status SessionMgr::WorkerSessionForSessionLocked(
+absl::Status SessionMgr::DeleteAllSessions() {
+  std::map<std::string, std::shared_ptr<WorkerSession>> tmp_sessions;
+  {
+    mutex_lock l(mu_);
+    swap(sessions_, tmp_sessions);
+  }
+  for (auto& session : tmp_sessions) {
+    session.second.reset();
+  }
+
+  return absl::OkStatus();
+}
+
+absl::Status SessionMgr::WorkerSessionForSessionLocked(
     const std::string& session_handle,
     std::shared_ptr<WorkerSession>* out_session) {
   if (session_handle.empty()) {
@@ -404,10 +418,10 @@ Status SessionMgr::WorkerSessionForSessionLocked(
       *out_session = it->second;
     }
   }
-  return OkStatus();
+  return absl::OkStatus();
 }
 
-Status SessionMgr::WorkerSessionForSession(
+absl::Status SessionMgr::WorkerSessionForSession(
     const std::string& session_handle,
     std::shared_ptr<WorkerSession>* out_session) {
   mutex_lock l(mu_);

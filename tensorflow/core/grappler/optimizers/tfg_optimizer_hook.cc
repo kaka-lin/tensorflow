@@ -18,6 +18,7 @@ limitations under the License.
 #include <string>
 #include <utility>
 
+#include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "llvm/Support/ThreadPool.h"
 #include "llvm/Support/Threading.h"
@@ -67,7 +68,7 @@ class TFGGrapplerOptimizer::Impl {
     if (num_tfg_threads) {
       llvm::ThreadPoolStrategy strategy;
       strategy.ThreadsRequested = num_tfg_threads;
-      threadpool_ = std::make_unique<llvm::ThreadPool>(strategy);
+      threadpool_ = std::make_unique<llvm::DefaultThreadPool>(strategy);
       ctx_.setThreadPool(*threadpool_);
     }
   }
@@ -89,7 +90,7 @@ class TFGGrapplerOptimizer::Impl {
  private:
   // An optional threadpool for running MLIR with threading. Use an external
   // threadpool so the number of threads can be controlled.
-  std::unique_ptr<llvm::ThreadPool> threadpool_;
+  std::unique_ptr<llvm::DefaultThreadPool> threadpool_;
   // The MLIR context.
   MLIRContext ctx_;
   // The pass manager containing the loaded TFG pass pipeline.
@@ -132,7 +133,7 @@ Status TFGGrapplerOptimizer::Optimize(
     // Import errors are not fatal. Log the error here and return `Aborted` so
     // the meta optimizer knows to swallow the error.
     LOG(ERROR) << name() << " failed: " << status.ToString();
-    return tensorflow::errors::Aborted(status.message());
+    return absl::AbortedError(status.message());
   }
   metrics.ReportAndStop();
 
@@ -145,7 +146,7 @@ Status TFGGrapplerOptimizer::Optimize(
   // bypass the problem. Find a better way to collect the pipeline failure
   // message here.
   if (failed(impl_->RunPipeline(module))) {
-    return InvalidArgument("MLIR Graph Optimizer failed: ");
+    return absl::InvalidArgumentError("MLIR Graph Optimizer failed: ");
   }
 
   // Export the TFG module to GraphDef.
@@ -171,7 +172,7 @@ Status TFGGrapplerOptimizer::Optimize(
     module.dump();
   }
 
-  return ::tensorflow::OkStatus();
+  return absl::OkStatus();
 }
 
 }  // end namespace tfg

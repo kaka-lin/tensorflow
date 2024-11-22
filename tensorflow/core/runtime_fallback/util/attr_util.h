@@ -15,6 +15,8 @@ limitations under the License.
 #ifndef TENSORFLOW_CORE_RUNTIME_FALLBACK_UTIL_ATTR_UTIL_H_
 #define TENSORFLOW_CORE_RUNTIME_FALLBACK_UTIL_ATTR_UTIL_H_
 
+#include <vector>
+
 #include "absl/strings/string_view.h"
 #include "llvm/ADT/StringRef.h"
 #include "tensorflow/core/framework/node_def_util.h"
@@ -39,8 +41,7 @@ inline absl::string_view ToAbslStringView(tfrt::string_view sv) {
 
 // Parses the string representation of the DataType in `dtype` into `data_type`.
 // Aborts the program for unsupported dtypes.
-tensorflow::Status ParseTfDataType(absl::string_view dtype,
-                                   DataType* data_type);
+absl::Status ParseTfDataType(absl::string_view dtype, DataType* data_type);
 
 // The following 2 functions convert between Tensorflow DataTypes and
 // OpAttrTypes. The mapping between OpAttrType and DataType is defined in

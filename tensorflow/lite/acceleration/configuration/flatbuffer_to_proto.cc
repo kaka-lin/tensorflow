@@ -55,6 +55,10 @@ proto::Delegate ConvertDelegate(Delegate delegate) {
       return proto::Delegate::EDGETPU_CORAL;
     case Delegate_CORE_ML:
       return proto::Delegate::CORE_ML;
+    case Delegate_ARMNN:
+      return proto::Delegate::ARMNN;
+    case Delegate_MTK_NEURON:
+      return proto::Delegate::MTK_NEURON;
   }
   TFLITE_LOG_PROD(TFLITE_LOG_ERROR, "Unexpected value for Delegate: %d",
                   delegate);
@@ -333,6 +337,9 @@ proto::StableDelegateLoaderSettings ConvertStableDelegateLoaderSettings(
   if (settings.delegate_path() != nullptr) {
     proto_settings.set_delegate_path(settings.delegate_path()->str());
   }
+  if (settings.delegate_name() != nullptr) {
+    proto_settings.set_delegate_name(settings.delegate_name()->str());
+  }
 
   return proto_settings;
 }
@@ -347,6 +354,125 @@ proto::CoralSettings ConvertCoralSettings(const CoralSettings& settings) {
   proto_settings.set_usb_always_dfu(settings.usb_always_dfu());
   proto_settings.set_usb_max_bulk_in_queue_length(
       settings.usb_max_bulk_in_queue_length());
+  return proto_settings;
+}
+
+proto::GoogleEdgeTpuSettings::Priority ConvertGoogleEdgeTpuPriority(
+    GoogleEdgeTpuSettings_::Priority priority) {
+  switch (priority) {
+    case GoogleEdgeTpuSettings_::Priority_PRIORITY_UNDEFINED:
+      return proto::GoogleEdgeTpuSettings::PRIORITY_UNDEFINED;
+    case GoogleEdgeTpuSettings_::Priority_PRIORITY_LOW:
+      return proto::GoogleEdgeTpuSettings::PRIORITY_LOW;
+    case GoogleEdgeTpuSettings_::Priority_PRIORITY_MEDIUM:
+      return proto::GoogleEdgeTpuSettings::PRIORITY_MEDIUM;
+    case GoogleEdgeTpuSettings_::Priority_PRIORITY_HIGH:
+      return proto::GoogleEdgeTpuSettings::PRIORITY_HIGH;
+  }
+}
+
+proto::GoogleEdgeTpuSettings::TriState ConvertGoogleEdgeTpuTriState(
+    GoogleEdgeTpuSettings_::TriState tri_state) {
+  switch (tri_state) {
+    case GoogleEdgeTpuSettings_::TriState_TRISTATE_UNDEFINED:
+      return proto::GoogleEdgeTpuSettings::TRISTATE_UNDEFINED;
+    case GoogleEdgeTpuSettings_::TriState_TRISTATE_FALSE:
+      return proto::GoogleEdgeTpuSettings::TRISTATE_FALSE;
+    case GoogleEdgeTpuSettings_::TriState_TRISTATE_TRUE:
+      return proto::GoogleEdgeTpuSettings::TRISTATE_TRUE;
+  }
+}
+
+proto::GoogleEdgeTpuSettings ConvertGoogleEdgetpuSettings(
+    const GoogleEdgeTpuSettings& settings) {
+  proto::GoogleEdgeTpuSettings proto_settings;
+  proto_settings.set_log_verbosity(settings.log_verbosity());
+  proto_settings.set_enable_tracing(settings.enable_tracing());
+  proto_settings.set_priority(
+      ConvertGoogleEdgeTpuPriority(settings.priority()));
+  if (settings.extension_data()) {
+    proto_settings.set_extension_data(settings.extension_data()->data(),
+                                      settings.extension_data()->size());
+  }
+  if (settings.model_identifier()) {
+    proto_settings.set_model_identifier(settings.model_identifier()->str());
+  }
+  proto_settings.set_use_async_api(settings.use_async_api());
+  proto_settings.set_delegate_should_manage_cache_for_inputs(
+      settings.delegate_should_manage_cache_for_inputs());
+  proto_settings.set_delegate_should_manage_cache_for_outputs(
+      settings.delegate_should_manage_cache_for_outputs());
+  proto_settings.set_prefer_cache_coherency_for_inputs(
+      ConvertGoogleEdgeTpuTriState(
+          settings.prefer_cache_coherency_for_inputs()));
+  proto_settings.set_prefer_cache_coherency_for_outputs(
+      ConvertGoogleEdgeTpuTriState(
+          settings.prefer_cache_coherency_for_outputs()));
+  proto_settings.set_allow_fp16_precision_for_fp32(
+      settings.allow_fp16_precision_for_fp32());
+  return proto_settings;
+}
+
+proto::CompilationCachingSettings ConvertCompilationCachingSettings(
+    const CompilationCachingSettings& settings) {
+  proto::CompilationCachingSettings proto_settings;
+  if (settings.cache_dir() != nullptr) {
+    proto_settings.set_cache_dir(settings.cache_dir()->str());
+  }
+  if (settings.model_token() != nullptr) {
+    proto_settings.set_model_token(settings.model_token()->str());
+  }
+  return proto_settings;
+}
+
+proto::MtkNeuronSettings ConvertMtkNeuronSettings(
+    const MtkNeuronSettings& settings) {
+  proto::MtkNeuronSettings proto_settings;
+  proto_settings.set_execution_preference(
+      static_cast<proto::MtkNeuronSettings_ExecutionPreference>(
+          settings.execution_preference()));
+  proto_settings.set_execution_priority(
+      static_cast<proto::MtkNeuronSettings_ExecutionPriority>(
+          settings.execution_priority()));
+
+  auto optimization_hints = settings.optimization_hints();
+  if (optimization_hints != nullptr) {
+    for (auto hint : *optimization_hints) {
+      proto_settings.add_optimization_hints(
+          static_cast<proto::MtkNeuronSettings_OptimizationHint>(hint));
+    }
+  }
+
+  proto_settings.set_operation_check_mode(
+      static_cast<proto::MtkNeuronSettings_OperationCheckMode>(
+          settings.operation_check_mode()));
+  proto_settings.set_allow_fp16_precision_for_fp32(
+      settings.allow_fp16_precision_for_fp32());
+  proto_settings.set_use_ahwb(settings.use_ahwb());
+  proto_settings.set_use_cacheable_buffer(settings.use_cacheable_buffer());
+
+  auto compile_options = settings.compile_options();
+  if (compile_options != nullptr) {
+    for (auto option : *compile_options) {
+      proto_settings.add_compile_options(option->str());
+    }
+  }
+
+  auto accelerator_names = settings.accelerator_names();
+  if (accelerator_names != nullptr) {
+    for (auto name : *accelerator_names) {
+      proto_settings.add_accelerator_names(name->str());
+    }
+  }
+
+  if (settings.neuron_config_path()) {
+    proto_settings.set_neuron_config_path(settings.neuron_config_path()->str());
+  }
+
+  proto_settings.set_inference_deadline_ms(settings.inference_deadline_ms());
+  proto_settings.set_inference_abort_time_ms(
+      settings.inference_abort_time_ms());
+
   return proto_settings;
 }
 
@@ -376,12 +502,6 @@ proto::TFLiteSettings ConvertTfliteSettings(const TFLiteSettings& settings) {
         ConvertCoreMLSettings(*settings.coreml_settings());
   }
 
-  if (settings.stable_delegate_loader_settings() != nullptr) {
-    *proto_settings.mutable_stable_delegate_loader_settings() =
-        ConvertStableDelegateLoaderSettings(
-            *settings.stable_delegate_loader_settings());
-  }
-
   if (settings.cpu_settings() != nullptr) {
     *proto_settings.mutable_cpu_settings() =
         ConvertCPUSettings(*settings.cpu_settings());
@@ -389,6 +509,7 @@ proto::TFLiteSettings ConvertTfliteSettings(const TFLiteSettings& settings) {
 
   proto_settings.set_max_delegated_partitions(
       settings.max_delegated_partitions());
+
   if (settings.edgetpu_settings() != nullptr) {
     *proto_settings.mutable_edgetpu_settings() =
         ConvertEdgeTpuSettings(*settings.edgetpu_settings());
@@ -401,8 +522,32 @@ proto::TFLiteSettings ConvertTfliteSettings(const TFLiteSettings& settings) {
     *proto_settings.mutable_fallback_settings() =
         ConvertFallbackSettings(*settings.fallback_settings());
   }
+
   proto_settings.set_disable_default_delegates(
       settings.disable_default_delegates());
+
+  if (settings.stable_delegate_loader_settings() != nullptr) {
+    *proto_settings.mutable_stable_delegate_loader_settings() =
+        ConvertStableDelegateLoaderSettings(
+            *settings.stable_delegate_loader_settings());
+  }
+
+  if (settings.google_edgetpu_settings() != nullptr) {
+    *proto_settings.mutable_google_edgetpu_settings() =
+        ConvertGoogleEdgetpuSettings(*settings.google_edgetpu_settings());
+  }
+
+  if (settings.compilation_caching_settings() != nullptr) {
+    *proto_settings.mutable_compilation_caching_settings() =
+        ConvertCompilationCachingSettings(
+            *settings.compilation_caching_settings());
+  }
+
+  if (settings.mtk_neuron_settings() != nullptr) {
+    *proto_settings.mutable_mtk_neuron_settings() =
+        ConvertMtkNeuronSettings(*settings.mtk_neuron_settings());
+  }
+
   return proto_settings;
 }
 

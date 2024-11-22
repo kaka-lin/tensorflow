@@ -76,7 +76,7 @@ class Device : public DeviceBase {
   // human-readable and not computer-parsed, except that two devices
   // with the same device_type() are expected to perform similarly
   // (both from a computation and communication perspective).
-  const std::string& device_type() const {
+  const std::string& device_type() const override {
     return device_attributes_.device_type();
   }
 
@@ -142,7 +142,7 @@ class Device : public DeviceBase {
   // 'graph' supplies the partition of the graph assigned to this
   // device.
   virtual Status MaybeRewriteGraph(std::unique_ptr<Graph>* /*graph*/) {
-    return OkStatus();
+    return absl::OkStatus();
   }
 
   // Sets `out_context` a new DeviceContext* for executing a graph, or nullptr
@@ -153,7 +153,7 @@ class Device : public DeviceBase {
   // and should call Unref().
   virtual Status TryGetDeviceContext(DeviceContext** out_context) {
     *out_context = nullptr;
-    return OkStatus();
+    return absl::OkStatus();
   }
 
   // Returns the op segment of this device.  The caller can reuse op
@@ -193,6 +193,18 @@ class Device : public DeviceBase {
   // Informs if this Device can be used as a caller in RemoteCall operation.
   virtual bool IsRemoteCallAllowed() const;
 
+  // Whether to merge the host_to_device copy stream with the compute stream.
+  // Only useful for GPU devices.
+  virtual bool merge_host_to_device_stream() const { return false; }
+
+  // Whether to merge the device_to_host copy stream with the compute stream.
+  // Only useful for GPU devices.
+  virtual bool merge_device_to_host_stream() const { return false; }
+
+  // Whether to merge the device_to_device copy streams with the compute stream.
+  // Only useful for GPU devices.
+  virtual bool merge_device_to_device_stream() const { return false; }
+
  protected:
   void DeleteResourceMgr() {
     delete rmgr_;
@@ -209,7 +221,8 @@ class Device : public DeviceBase {
   // Resources associated w/ this device. E.g., shared variables, etc.
   ResourceMgr* rmgr_ = nullptr;
 
-  TF_DISALLOW_COPY_AND_ASSIGN(Device);
+  Device(const Device&) = delete;
+  void operator=(const Device&) = delete;
 };
 
 }  // namespace tensorflow

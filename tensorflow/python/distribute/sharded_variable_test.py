@@ -25,7 +25,7 @@ from tensorflow.python.distribute import combinations
 from tensorflow.python.distribute import distribute_lib
 from tensorflow.python.distribute import parameter_server_strategy_v2
 from tensorflow.python.distribute import sharded_variable
-from tensorflow.python.distribute.cluster_resolver import SimpleClusterResolver
+from tensorflow.python.distribute.cluster_resolver import cluster_resolver as cluster_resolver_lib
 from tensorflow.python.distribute.test_util import get_cluster_def
 from tensorflow.python.distribute.test_util import TestClusterParams
 from tensorflow.python.eager import context
@@ -51,7 +51,7 @@ from tensorflow.python.saved_model import save
 from tensorflow.python.saved_model import signature_constants
 from tensorflow.python.saved_model import tag_constants
 from tensorflow.python.trackable import autotrackable
-from tensorflow.python.training.server_lib import ClusterSpec
+from tensorflow.python.training import server_lib
 from tensorflow.python.util import nest
 
 # We create one cluster to share between tests. The cluster should be large
@@ -569,13 +569,19 @@ class ShardedVariableTest(test.TestCase, parameterized.TestCase):
     self.assertAllClose(safe_sparse_lookup(), [[1., 2.], [0., 0.], [3., 4.]])
 
   def test_slicing(self):
+    data = [[1, 2], [3, 4], [5, 6], [7, 8], [9, 10], [11, 12], [13, 14],
+            [15, 16]]
     v = [
-        variables_lib.Variable([[1, 2], [3, 4], [5, 6]]),
-        variables_lib.Variable([[7, 8], [9, 10], [11, 12]]),
-        variables_lib.Variable([[13, 14], [15, 16]])
+        variables_lib.Variable(data[:3]),
+        variables_lib.Variable(data[3:6]),
+        variables_lib.Variable(data[6:])
     ]
     sv = sharded_variable.ShardedVariable(v)
     empty = v[0][0:0]
+
+    # Test cases: all individual indices
+    for ix in range(len(data)):
+      self.assertAllEqual(sv[ix].numpy(), data[ix])
 
     # Test cases: positive step
     self.assertAllEqual(sv[:], array_ops.concat(v, axis=0))
@@ -704,7 +710,8 @@ class ShardedVariableSaveLoadTest(test.TestCase, parameterized.TestCase):
   def setUp(self):
     super().setUp()
     cluster_def = get_cluster_def(test_cluster_params, num_workers=2, num_ps=3)
-    self.cluster_resolver = SimpleClusterResolver(ClusterSpec(cluster_def))
+    self.cluster_resolver = cluster_resolver_lib.SimpleClusterResolver(
+        server_lib.ClusterSpec(cluster_def))
 
   def tearDown(self):
     super().tearDown()

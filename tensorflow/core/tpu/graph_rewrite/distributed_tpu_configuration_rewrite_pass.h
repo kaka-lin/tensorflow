@@ -23,8 +23,7 @@ limitations under the License.
 #define TENSORFLOW_CORE_TPU_GRAPH_REWRITE_DISTRIBUTED_TPU_CONFIGURATION_REWRITE_PASS_H_
 
 #include "tensorflow/core/common_runtime/optimization_registry.h"
-#include "tensorflow/core/graph/graph.h"
-#include "tensorflow/core/platform/env.h"
+#include "tensorflow/core/platform/status.h"
 
 namespace tensorflow {
 
@@ -34,7 +33,7 @@ namespace tensorflow {
 // device of each host in the same job as the given TPU_SYSTEM device.
 class DistributedTPUConfigurationRewritePass : public GraphOptimizationPass {
  public:
-  Status Run(const GraphOptimizationPassOptions& options) override;
+  absl::Status Run(const GraphOptimizationPassOptions& options) override;
 };
 
 // Replaces dummy ShutdownDistributedTPU Ops assigned to TPU_SYSTEM
@@ -43,7 +42,7 @@ class DistributedTPUConfigurationRewritePass : public GraphOptimizationPass {
 // host in the same job as the given TPU_SYSTEM device.
 class DistributedTPUShutdownRewritePass : public GraphOptimizationPass {
  public:
-  Status Run(const GraphOptimizationPassOptions& options) override;
+  absl::Status Run(const GraphOptimizationPassOptions& options) override;
 };
 
 }  // namespace tensorflow

@@ -18,37 +18,24 @@ limitations under the License.
 #include <string>
 #include <utility>
 
-#include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
-#include "absl/container/inlined_vector.h"
-#include "absl/strings/str_cat.h"
-#include "absl/strings/str_join.h"
+#include "absl/status/status.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Casting.h"
-#include "llvm/Support/FormatVariadic.h"
-#include "mlir/Dialect/Func/IR/FuncOps.h"  // from @llvm-project
-#include "mlir/IR/Attributes.h"  // from @llvm-project
 #include "mlir/IR/Builders.h"  // from @llvm-project
-#include "mlir/IR/BuiltinOps.h"  // from @llvm-project
-#include "mlir/IR/Location.h"  // from @llvm-project
-#include "mlir/IR/Matchers.h"  // from @llvm-project
+#include "mlir/IR/BuiltinTypes.h"  // from @llvm-project
 #include "mlir/IR/Types.h"  // from @llvm-project
 #include "mlir/IR/Value.h"  // from @llvm-project
-#include "mlir/Interfaces/InferTypeOpInterface.h"  // from @llvm-project
-#include "tensorflow/compiler/mlir/tensorflow/ir/tf_device.h"
+#include "mlir/Support/LLVM.h"  // from @llvm-project
 #include "tensorflow/compiler/mlir/tensorflow/ir/tf_ops.h"
-#include "tensorflow/compiler/mlir/tensorflow/transforms/collection_ops_util.h"
-#include "tensorflow/core/framework/tensor_shape.h"
 #include "tensorflow/core/platform/errors.h"
-#include "tensorflow/dtensor/cc/constants.h"
+#include "tensorflow/dtensor/cc/dstatus.h"
 #include "tensorflow/dtensor/cc/tensor_layout.h"
 #include "tensorflow/dtensor/mlir/collectives.h"
-#include "tensorflow/dtensor/mlir/ir/tf_dtensor.h"
 #include "tensorflow/dtensor/mlir/layout_parsing.h"
 #include "tensorflow/dtensor/mlir/op_utils.h"
 #include "tensorflow/dtensor/mlir/shape_utils.h"
@@ -67,35 +54,35 @@ absl::string_view DefiningOpName(mlir::Value operand) {
   return StringRefToView(operand.getDefiningOp()->getName().getStringRef());
 }
 
-Status AssertReplicated(mlir::Value operand) {
+absl::Status AssertReplicated(mlir::Value operand) {
   TF_ASSIGN_OR_RETURN(auto layout, ExtractLayoutFromOperand(operand));
-  if (!layout) return OkStatus();
+  if (!layout) return absl::OkStatus();
 
   if (!layout->IsFullyReplicated()) {
     return errors::InvalidArgument(
         "Expected layout for ", DefiningOpName(operand),
         " to be fully replicated, but found ", layout->ToString());
   }
-  return OkStatus();
+  return absl::OkStatus();
 }
 
 absl::flat_hash_set<std::string> ReducedMeshDimensions(
     const dtensor::Layout& input, const dtensor::Layout& output) {
   absl::flat_hash_set<std::string> mesh_dims;
-  for (const auto& dim : input.sharding_specs()) {
-    mesh_dims.insert(dim.sharding_spec());
+  for (const auto& dim : input.sharding_spec_strs()) {
+    mesh_dims.insert(dim);
   }
-  for (const auto& dim : output.sharding_specs()) {
-    mesh_dims.erase(dim.sharding_spec());
+  for (const auto& dim : output.sharding_spec_strs()) {
+    mesh_dims.erase(dim);
   }
   return mesh_dims;
 }
 
 template <typename OpType>
-Status ExtractDims(mlir::Operation* op,
-                   llvm::SmallVector<int64_t, 4>* reduced_dims, bool* keep_dims,
-                   bool* matched) {
-  if (!llvm::isa<OpType>(op)) return OkStatus();
+absl::Status ExtractDims(mlir::Operation* op,
+                         llvm::SmallVector<int64_t, 4>* reduced_dims,
+                         bool* keep_dims, bool* matched) {
+  if (!llvm::isa<OpType>(op)) return absl::OkStatus();
   auto reduce_op = llvm::cast<OpType>(op);
   *keep_dims = reduce_op.getKeepDims();
   TF_RETURN_IF_ERROR(ExtractConstVectorFromValue(
@@ -103,14 +90,14 @@ Status ExtractDims(mlir::Operation* op,
   TF_RETURN_IF_ERROR(AssertReplicated(reduce_op.getReductionIndices()));
   *matched = true;
 
-  return OkStatus();
+  return absl::OkStatus();
 }
 
 template <>
-Status ExtractDims<mlir::TF::L2LossOp>(
+absl::Status ExtractDims<mlir::TF::L2LossOp>(
     mlir::Operation* op, llvm::SmallVector<int64_t, 4>* reduced_dims,
     bool* keep_dims, bool* matched) {
-  if (!llvm::isa<mlir::TF::L2LossOp>(op)) return OkStatus();
+  if (!llvm::isa<mlir::TF::L2LossOp>(op)) return absl::OkStatus();
   auto loss_op = llvm::cast<mlir::TF::L2LossOp>(op);
   *reduced_dims = llvm::SmallVector<int64_t, 4>{};
   reduced_dims->resize(ValueRank(loss_op->getOperand(0)));
@@ -119,23 +106,23 @@ Status ExtractDims<mlir::TF::L2LossOp>(
   }
   *keep_dims = false;
   *matched = true;
-  return OkStatus();
+  return absl::OkStatus();
 }
 
 template <>
-Status ExtractDims<mlir::TF::BiasAddGradOp>(
+absl::Status ExtractDims<mlir::TF::BiasAddGradOp>(
     mlir::Operation* op, llvm::SmallVector<int64_t, 4>* reduced_dims,
     bool* keep_dims, bool* matched) {
-  if (!llvm::isa<mlir::TF::BiasAddGradOp>(op)) return OkStatus();
+  if (!llvm::isa<mlir::TF::BiasAddGradOp>(op)) return absl::OkStatus();
   auto bias_add_grad_op = llvm::cast<mlir::TF::BiasAddGradOp>(op);
   auto data_format = bias_add_grad_op.getDataFormat();
   // rank is at least 2 (required by BiasAddGrad).
   int rank = ValueRank(bias_add_grad_op->getOperand(0));
-  if (data_format.equals("NHWC")) {
+  if (data_format == "NHWC") {
     for (int dim = 0; dim < rank - 1; ++dim) {
       reduced_dims->push_back(dim);
     }
-  } else if (data_format.equals("NCHW")) {
+  } else if (data_format == "NCHW") {
     for (int dim = 0; dim < rank; ++dim) {
       if (dim == 1) continue;
       reduced_dims->push_back(dim);
@@ -146,14 +133,27 @@ Status ExtractDims<mlir::TF::BiasAddGradOp>(
   }
   *keep_dims = false;
   *matched = true;
-  return OkStatus();
+  return absl::OkStatus();
 }
 
-Status ExtractReductionParameters(mlir::Operation* op,
-                                  absl::flat_hash_set<int>& reduced_dims_set,
-                                  bool& keep_dims) {
+template <>
+absl::Status ExtractDims<mlir::TF::EncodePngOp>(
+    mlir::Operation* op, llvm::SmallVector<int64_t, 4>* reduced_dims,
+    bool* keep_dims, bool* matched) {
+  if (!llvm::isa<mlir::TF::EncodePngOp>(op)) return absl::OkStatus();
+  *reduced_dims = {-3, -2, -1};
+  *keep_dims = false;
+  *matched = true;
+  return absl::OkStatus();
+}
+
+absl::Status ExtractReductionParameters(
+    mlir::Operation* op, absl::flat_hash_set<int>& reduced_dims_set,
+    bool& keep_dims) {
   llvm::SmallVector<int64_t, 4> reduced_dims;
   bool matched = false;
+  TF_RETURN_IF_ERROR(ExtractDims<mlir::TF::EncodePngOp>(op, &reduced_dims,
+                                                        &keep_dims, &matched));
   TF_RETURN_IF_ERROR(
       ExtractDims<mlir::TF::SumOp>(op, &reduced_dims, &keep_dims, &matched));
   TF_RETURN_IF_ERROR(
@@ -178,7 +178,7 @@ Status ExtractReductionParameters(mlir::Operation* op,
                                  " not yet implemented.");
 
   reduced_dims_set.insert(reduced_dims.begin(), reduced_dims.end());
-  return OkStatus();
+  return absl::OkStatus();
 }
 
 StatusOr<Layout> ComputeResultLayout(mlir::Operation* op,
@@ -205,7 +205,7 @@ StatusOr<mlir::Operation*> ReduceSPMDExpander::ExpandOp(mlir::Operation* op) {
   // Generate an error message for TPU int64.
   if (input_layout->mesh().is_tpu_mesh()) {
     if (auto tensor_type =
-            op->getOperand(0).getType().dyn_cast<mlir::TensorType>()) {
+            mlir::dyn_cast<mlir::TensorType>(op->getOperand(0).getType())) {
       if (tensor_type.getElementType().isInteger(64)) {
         return errors::InvalidArgument(
             "ReduceOp on TPU does not support int64 as dtype.");
@@ -223,8 +223,8 @@ StatusOr<mlir::Operation*> ReduceSPMDExpander::ExpandOp(mlir::Operation* op) {
   InferSPMDExpandedLocalShape(op);
 
   mlir::Operation* reduce_op;
-  if (mlir::isa<mlir::TF::SumOp, mlir::TF::L2LossOp, mlir::TF::BiasAddGradOp>(
-          op)) {
+  if (mlir::isa<mlir::TF::SumOp, mlir::TF::L2LossOp, mlir::TF::BiasAddGradOp,
+                mlir::TF::EncodePngOp>(op)) {
     TF_ASSIGN_OR_RETURN(
         reduce_op,
         EmitAllReduce(builder, output_layout, reduced_dims, op, kReduceOpAdd));

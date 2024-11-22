@@ -85,8 +85,7 @@ class ProtoTextOutput {
 
   // Appends a string value, like my_field: "abc123".
   void AppendString(const char field_name[], const string& value) {
-    AppendFieldAndValue(
-        field_name, StrCat("\"", ::tensorflow::str_util::CEscape(value), "\""));
+    AppendFieldAndValue(field_name, StrCat("\"", absl::CEscape(value), "\""));
   }
 
   // Appends a string value, like my_field: "abc123", but only if value is not
@@ -116,7 +115,8 @@ class ProtoTextOutput {
   // current deepest level of nesting.
   bool level_empty_ = true;
 
-  TF_DISALLOW_COPY_AND_ASSIGN(ProtoTextOutput);
+  ProtoTextOutput(const ProtoTextOutput&) = delete;
+  void operator=(const ProtoTextOutput&) = delete;
 };
 
 inline void ProtoSpaceAndComments(Scanner* scanner) {

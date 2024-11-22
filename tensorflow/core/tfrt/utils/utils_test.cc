@@ -14,13 +14,17 @@ limitations under the License.
 ==============================================================================*/
 #include "tensorflow/core/tfrt/utils/utils.h"
 
+#include <memory>
+#include <string>
+#include <vector>
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "tensorflow/core/framework/device.h"
 #include "tensorflow/core/platform/errors.h"
 #include "tensorflow/core/platform/status.h"
 #include "tensorflow/core/platform/statusor.h"
-#include "tfrt/cpp_tests/test_util.h""  // from @tf_runtime
+#include "tfrt/cpp_tests/test_util.h"  // from @tf_runtime
 #include "tfrt/host_context/host_context.h"  // from @tf_runtime
 
 namespace tfrt {
@@ -53,26 +57,11 @@ TEST(UtilsTest, CreateDummyTfDevices) {
   EXPECT_EQ(dummy_tf_devices[1]->name(), device_name[1]);
 }
 
-TEST(UtilsTest, AddDummyTfrtDevices) {
-  std::unique_ptr<HostContext> host_ctx = CreateHostContext();
-  const std::vector<std::string> device_name{"/device:tpu:0"};
-  AddDummyTfrtDevices(device_name, host_ctx.get());
-
-  RCReference<Device> device0 =
-      host_ctx->GetDeviceManager()->GetDeviceRef<Device>(device_name[0]);
-  ASSERT_TRUE(device0);
-  EXPECT_EQ(device0->name(), device_name[0]);
-
-  RCReference<Device> device1 =
-      host_ctx->GetDeviceManager()->GetDeviceRef<Device>("no-such-device");
-  EXPECT_FALSE(device1);
-}
-
 TEST(UtilsTest, ReturnIfErrorInImport) {
   auto status = []() {
     RETURN_IF_ERROR_IN_IMPORT(
         tensorflow::errors::CancelledWithPayloads("msg", {{"a", "b"}}));
-    return tensorflow::OkStatus();
+    return absl::OkStatus();
   }();
   EXPECT_FALSE(status.ok());
   EXPECT_STREQ(status.ToString().c_str(),
@@ -84,7 +73,7 @@ TEST(UtilsTest, ReturnIfErrorInCompile) {
   auto status = []() {
     RETURN_IF_ERROR_IN_COMPILE(
         tensorflow::errors::CancelledWithPayloads("msg", {{"a", "b"}}));
-    return tensorflow::OkStatus();
+    return absl::OkStatus();
   }();
   EXPECT_FALSE(status.ok());
   EXPECT_STREQ(
@@ -98,7 +87,7 @@ TEST(UtilsTest, ReturnIfErrorInInit) {
   auto status = []() {
     RETURN_IF_ERROR_IN_INIT(
         tensorflow::errors::CancelledWithPayloads("msg", {{"a", "b"}}));
-    return tensorflow::OkStatus();
+    return absl::OkStatus();
   }();
   EXPECT_FALSE(status.ok());
   EXPECT_STREQ(status.ToString().c_str(),
@@ -110,9 +99,9 @@ TEST(UtilsTest, AssignOrReturnInImport) {
   auto status = []() {
     ASSIGN_OR_RETURN_IN_IMPORT(
         [[maybe_unused]] auto unused_value,
-        tensorflow::StatusOr<int>(
+        absl::StatusOr<int>(
             tensorflow::errors::CancelledWithPayloads("msg", {{"a", "b"}})));
-    return tensorflow::OkStatus();
+    return absl::OkStatus();
   }();
   EXPECT_FALSE(status.ok());
   EXPECT_STREQ(status.ToString().c_str(),
@@ -124,9 +113,9 @@ TEST(UtilsTest, AssignOrReturnInCompile) {
   auto status = []() {
     ASSIGN_OR_RETURN_IN_COMPILE(
         [[maybe_unused]] auto unused_value,
-        tensorflow::StatusOr<int>(
+        absl::StatusOr<int>(
             tensorflow::errors::CancelledWithPayloads("msg", {{"a", "b"}})));
-    return tensorflow::OkStatus();
+    return absl::OkStatus();
   }();
   EXPECT_FALSE(status.ok());
   EXPECT_STREQ(status.ToString().c_str(),
@@ -139,9 +128,9 @@ TEST(UtilsTest, AssignOrReturnInInit) {
   auto status = []() {
     ASSIGN_OR_RETURN_IN_INIT(
         [[maybe_unused]] auto unused_value,
-        tensorflow::StatusOr<int>(
+        absl::StatusOr<int>(
             tensorflow::errors::CancelledWithPayloads("msg", {{"a", "b"}})));
-    return tensorflow::OkStatus();
+    return absl::OkStatus();
   }();
   EXPECT_FALSE(status.ok());
   EXPECT_STREQ(std::string(status.ToString()).c_str(),

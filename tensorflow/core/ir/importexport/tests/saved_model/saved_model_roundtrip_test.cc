@@ -43,7 +43,7 @@ void RunRoundTrip(const std::string& input_file) {
   ASSERT_TRUE(read_result.ok());
 
   tensorflow::GraphDebugInfo debug_info;
-  tensorflow::StatusOr<mlir::OwningOpRef<mlir::ModuleOp>> module_ref_status =
+  absl::StatusOr<mlir::OwningOpRef<mlir::ModuleOp>> module_ref_status =
       mlir::tfg::ImportSavedModelToMlir(&context, debug_info, original_model);
 
   mlir::OwningOpRef<mlir::ModuleOp> module_ref =
@@ -53,9 +53,9 @@ void RunRoundTrip(const std::string& input_file) {
   auto status = mlir::tfg::ExportMlirToSavedModel(*module_ref, original_model,
                                                   &final_model);
   if (!status.ok()) {
-    LOG(ERROR) << "Export failed: " << status.ToString();
+    LOG(ERROR) << "Export failed: " << status;
   }
-  ASSERT_TRUE(status.ok()) << status.ToString();
+  ASSERT_TRUE(status.ok()) << status;
 
   tensorflow::MetaGraphDef* original_metagraph =
       original_model.mutable_meta_graphs(0);

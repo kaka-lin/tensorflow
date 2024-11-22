@@ -32,7 +32,7 @@ DynamicDeviceMgr::DynamicDeviceMgr() : cpu_device_(nullptr) {}
 DynamicDeviceMgr::DynamicDeviceMgr(
     std::vector<std::unique_ptr<Device>>&& devices)
     : cpu_device_(nullptr) {
-  Status status = AddDevices(std::move(devices));
+  absl::Status status = AddDevices(std::move(devices));
   CHECK(status.ok());  // Crash OK
   mutex_lock l(devices_mu_);
   // Initialize cpu_device_.
@@ -104,11 +104,13 @@ string DynamicDeviceMgr::DeviceMappingString() const {
   return out;
 }
 
-Status DynamicDeviceMgr::LookupDevice(StringPiece name, Device** device) const {
+absl::Status DynamicDeviceMgr::LookupDevice(StringPiece name,
+                                            Device** device) const {
   tf_shared_lock l(devices_mu_);
   auto iter = device_map_.find(string(name));
   if (iter == device_map_.end()) {
     std::vector<StringPiece> device_names;
+    device_names.reserve(device_map_.size());
     for (auto&& itr : device_map_) {
       device_names.push_back(itr.first);
     }
@@ -117,7 +119,7 @@ Status DynamicDeviceMgr::LookupDevice(StringPiece name, Device** device) const {
     return errors::InvalidArgument(name, " unknown device.");
   }
   *device = iter->second;
-  return OkStatus();
+  return absl::OkStatus();
 }
 
 bool DynamicDeviceMgr::ContainsDevice(int64_t device_incarnation) const {
@@ -126,8 +128,8 @@ bool DynamicDeviceMgr::ContainsDevice(int64_t device_incarnation) const {
 }
 
 void DynamicDeviceMgr::ClearContainers(
-    gtl::ArraySlice<string> containers) const {
-  Status s;
+    absl::Span<const string> containers) const {
+  absl::Status s;
   tf_shared_lock l(devices_mu_);
   for (const auto& it : dynamic_devices_) {
     auto d = it.first;
@@ -157,7 +159,7 @@ int DynamicDeviceMgr::NumDevices() const {
   return dynamic_devices_.size();
 }
 
-Status DynamicDeviceMgr::AddDevices(
+absl::Status DynamicDeviceMgr::AddDevices(
     std::vector<std::unique_ptr<Device>> devices) {
   mutex_lock l(devices_mu_);
   for (auto& d : devices) {
@@ -180,10 +182,11 @@ Status DynamicDeviceMgr::AddDevices(
     device_incarnation_set_.insert(d->attributes().incarnation());
     dynamic_devices_.emplace(d.get(), std::move(d));
   }
-  return OkStatus();
+  return absl::OkStatus();
 }
 
-Status DynamicDeviceMgr::RemoveDevices(const std::vector<Device*>& devices) {
+absl::Status DynamicDeviceMgr::RemoveDevices(
+    const std::vector<Device*>& devices) {
   mutex_lock l(devices_mu_);
 
   for (const auto& d : devices) {
@@ -220,10 +223,10 @@ Status DynamicDeviceMgr::RemoveDevices(const std::vector<Device*>& devices) {
     stale_devices_.add(std::move(it->second));
     dynamic_devices_.erase(it);
   }
-  return OkStatus();
+  return absl::OkStatus();
 }
 
-Status DynamicDeviceMgr::RemoveDevicesByName(
+absl::Status DynamicDeviceMgr::RemoveDevicesByName(
     const std::vector<string>& device_names) {
   std::vector<Device*> devices_to_remove;
   for (const string& name : device_names) {

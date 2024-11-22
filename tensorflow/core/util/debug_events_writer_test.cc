@@ -15,6 +15,9 @@ limitations under the License.
 
 #include "tensorflow/core/util/debug_events_writer.h"
 
+#include <algorithm>
+#include <atomic>
+#include <memory>
 #include <vector>
 
 #include "absl/container/flat_hash_set.h"
@@ -60,7 +63,7 @@ class DebugEventsWriterTest : public ::testing::Test {
   static bool ReadDebugEventProto(io::RecordReader* reader, uint64* offset,
                                   DebugEvent* proto) {
     tstring record;
-    Status s = reader->ReadRecord(offset, &record);
+    absl::Status s = reader->ReadRecord(offset, &record);
     if (!s.ok()) {
       return false;
     }
